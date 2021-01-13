@@ -45,7 +45,7 @@
   ===============================================
 */
 
-//#define DEBUG
+#define DEBUG
 #define BENCHMARK
 
 // I2Cdev and MPU6050 must be installed as libraries, or else the .cpp/.h files
@@ -59,7 +59,7 @@
 // Arduino Wire library is required if I2Cdev I2CDEV_ARDUINO_WIRE implementation
 // is used in I2Cdev.h
 #if I2CDEV_IMPLEMENTATION == I2CDEV_ARDUINO_WIRE
-  #include "Wire.h"
+  //#include "Wire.h"
 #elif I2CDEV_IMPLEMENTATION == I2CDEV_BUILTIN_SBWIRE
   #include "SBWire.h"
 #endif
@@ -182,6 +182,7 @@ uint8_t teapotPacket[14] = { '$', 0x02, 0, 0, 0, 0, 0, 0, 0, 0, 0x00, 0x00, '\r'
 unsigned long esc_loop_timer;
 unsigned long timer_esc_1, timer_esc_2, timer_esc_3, timer_esc_4;
 unsigned long esc_1, esc_2, esc_3, esc_4;
+unsigned long escFL, escFR, escBL, escBR, throttle;
 
 ///////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // Receiver variabkes
@@ -190,6 +191,9 @@ unsigned long timer_1, timer_2, timer_3, timer_4, current_time;
 byte last_channel_1, last_channel_2, last_channel_3, last_channel_4;
 int receiver_input[5];
 
+float Cr=0, Cp=0;
+float K1r=1, K1p=1,K2r=1, K2p=1, K3r=1, K3p=1;
+float rLast=0, pLast=0;
 
 // ================================================================
 // ===               FLIGHT CONTROL ROUTINES                    ===
@@ -266,7 +270,7 @@ bool readFIFO()
     // There were too many failed attempts to read the FIFO, which is not good.
     // As a last resort, we try to reset the I2C bus
     Serial.println(F("Failed to read from FIFO for too long, resetting"));
-    Wire.reset();
+    //Wire.reset();
     fifoCount = mpu.getFIFOCount();
     mpu.resetFIFO();
     mpu.resetDMP();
@@ -296,8 +300,8 @@ bool readFIFO()
     Serial.println(packetSize);
     Serial.print("Elapsed time: ");
     Serial.println((mpuFifoTimerStop - loop_timer));
-    Serial.print("I2C frequency: ");
-    Serial.println(Wire.getClock());
+    //Serial.print("I2C frequency: ");
+    //Serial.println(Wire.getClock());
     return false;
   // otherwise, read the available packet
   } else {
@@ -479,9 +483,9 @@ void computeYPR()
   mpu.dmpGetQuaternion(&q, fifoBuffer);
   mpu.dmpGetGravity(&gravity, &q);
   mpu.dmpGetYawPitchRoll(ypr, &q, &gravity);
-  yprdeg[0] = ypr[0] * 180 / M_PI;
-  yprdeg[1] = ypr[1] * 180 / M_PI;
-  yprdeg[2] = ypr[2] * 180 / M_PI;
+  //yprdeg[0] = ypr[0] * 180 / M_PI;
+  //yprdeg[1] = ypr[1] * 180 / M_PI;
+  //yprdeg[2] = ypr[2] * 180 / M_PI;
 }
 
 
@@ -520,13 +524,25 @@ int normalize_receiver_channel(byte function){
 
 void computeMotorSpeeds()
 {
+float dr, dp, r, p;
 #ifdef BENCHMARK
   pidTimerStart = micros();
 #endif
 
   if (flightMode == AUTO_LEVELING) {
+    dp = ypr[1]-pLast;
+    dr = ypr[2]-rLast;
+    p = yprset[1]-ypr[1];
+    r = yprset[2]-ypr[2];
+    Cr=K1r*r+K2r*dr;
+    Cp=K1p*p+K2p*dp;
+
     
-  } else {
+    escFL = throttle - Cp + Cr;
+    escFR = throttle - Cp - Cr;
+    escBL = throttle + Cp + Cr;
+    escBR = throttle + Cp - Cr;
+    } else {
     
   }
 
