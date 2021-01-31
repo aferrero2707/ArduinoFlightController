@@ -190,6 +190,35 @@ unsigned long escFL, escFR, escBL, escBR, throttle;
 unsigned long timer_1, timer_2, timer_3, timer_4, current_time;
 byte last_channel_1, last_channel_2, last_channel_3, last_channel_4;
 int receiver_input[5];
+int rc_min[4];
+int rc_max[4];
+int rc_center[4];
+
+#define THROTTLE_CH 3
+#define THROTTLE_PIN 10
+#define THROTTLE_ID 2
+#define YAW_CH 4 
+#define YAW_PIN 11 
+#define YAW_ID 3 
+#define PITCH_CH 2 
+#define PITCH_PIN 9
+#define PITCH_ID 1
+#define PITCH_CH 1 
+#define PITCH_PIN 8 
+#define PITCH_ID 0 
+
+#define RC_CH1_MIN 994
+#define RC_CH1_MAX 1974
+#define RC_CH1_CENTER 1486
+#define RC_CH2_MIN 1002
+#define RC_CH2_MAX 1978
+#define RC_CH2_CENTER 1487
+#define RC_CH3_MIN 1010
+#define RC_CH3_MAX 1973
+#define RC_CH3_CENTER ((RC_CH3_MAX+RC_CH3_MIN)/2)
+#define RC_CH4_MIN 994
+#define RC_CH4_MAX 1967
+#define RC_CH4_CENTER 1487
 
 float Cr=0, Cp=0;
 float K1r=1, K1p=1,K2r=1, K2p=1, K3r=1, K3p=1;
@@ -484,7 +513,7 @@ void computeYPR()
   mpu.dmpGetGravity(&gravity, &q);
   mpu.dmpGetYawPitchRoll(ypr, &q, &gravity);
   //yprdeg[0] = ypr[0] * 180 / M_PI;
-  //yprdeg[1] = ypr[1] * 180 / M_PI;
+  //yprdeg[1] = ypr[1] * 180 // M_PI;
   //yprdeg[2] = ypr[2] * 180 / M_PI;
 }
 
@@ -492,8 +521,7 @@ void computeYPR()
 
 //This part converts the actual receiver signals to a standardized 1000 – 1500 – 2000 microsecond value.
 //The stored data in the EEPROM is used.
-int normalize_receiver_channel(byte function){
-  byte channel, reverse;                                                       //First we declare some local variables
+int normalize_receiver_channel(byte channel){
   int low, center, high, actual;
   int difference;
 
@@ -509,13 +537,11 @@ int normalize_receiver_channel(byte function){
   if(actual < center) {                                                        //The actual receiver value is lower than the center value
     if(actual < low) actual = low;                                             //Limit the lowest value to the value that was detected during setup
     difference = ((long)(center - actual) * (long)500) / (center - low);       //Calculate and scale the actual value to a 1000 - 2000us value
-    if(reverse == 1) return 1500 + difference;                                 //If the channel is reversed
     else return 1500 - difference;                                             //If the channel is not reversed
   }
   else if(actual > center) {                                                   //The actual receiver value is higher than the center value
     if(actual > high) actual = high;                                           //Limit the lowest value to the value that was detected during setup
     difference = ((long)(actual - center) * (long)500) / (high - center);      //Calculate and scale the actual value to a 1000 - 2000us value
-    if(reverse == 1) return 1500 - difference;                                 //If the channel is reversed
     else return 1500 + difference;                                             //If the channel is not reversed
   }
   else return 1500;
@@ -694,6 +720,10 @@ void setup() {
   PCMSK0 |= (1 << PCINT3);                                                  //Set PCINT3 (digital input 11)to trigger an interrupt on state change.
   //PCMSK0 |= (1 << PCINT4);                                                  //Set PCINT4 (digital input 12)to trigger an interrupt on state change.
 
+int rc_min[4];
+int rc_max[4];
+int rc_center[4];
+  rc_min[0] = RC_CH1_MIN;
   loop_count = 0;
 
   mpu.resetFIFO();
