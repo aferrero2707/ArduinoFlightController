@@ -76,16 +76,26 @@ void setup() {
 // ===                    MAIN PROGRAM LOOP                     ===
 // ================================================================
 
-void loop() {
+void loop()
+{
   byte data;
   if(Serial.available() > 0) {
     data = Serial.read();                                       //Read the incomming byte.
     delayMicroseconds(1000);                                    //Wait for any other bytes to come in
     while(Serial.available() > 0) Serial.read(); //Empty the Serial buffer.
 
-    if(data == '1') escLength = 2000;
-    if(data == '2') escLength = 1000;
-    if(data == '3') escLength = 1200;
+    if(data == '1') {
+      escLength = 2000;
+      Serial.println(escLength);
+    }
+    if(data == '2') {
+      escLength = 1000;
+      Serial.println(escLength);
+    }
+    if(data == '3') {
+      escLength = 1200;
+      Serial.println(escLength);
+    }
   }
 
   heartBeat();
