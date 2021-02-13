@@ -7,6 +7,8 @@ unsigned long loop_timer, loop_timer_stop, loop_count = 0;
 unsigned long esc_loop_timer;
 unsigned long escLength, escTimer;
 
+#define BENCHMARK
+
 #define HB_TIMEOUT 60
 void heartBeat()
 {
@@ -59,6 +61,8 @@ void setup() {
   digitalWrite(STATUS_LED_PIN, LOW);
   digitalWrite(ERROR_LED_PIN, HIGH);
 
+  DDRD = DDRD | B11110000;
+
   // initialize serial communication
   Serial.begin(115200);
   loop_count = 0;
@@ -93,7 +97,7 @@ void loop()
       Serial.println(escLength);
     }
     if(data == '3') {
-      escLength = 1200;
+      escLength = 1100;
       Serial.println(escLength);
     }
   }
