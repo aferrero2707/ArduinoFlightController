@@ -45,7 +45,7 @@
   ===============================================
 */
 
-#define DEBUG
+//#define DEBUG
 #define BENCHMARK
 
 // I2Cdev and MPU6050 must be installed as libraries, or else the .cpp/.h files
@@ -131,7 +131,7 @@ MPU6050 mpu;
 #define INTERRUPT_PIN 2  // use pin 2 on Arduino Uno & most boards
 #define STATUS_LED_PIN 13 // (Arduino is 13, Teensy is 11, Teensy++ is 6)
 #define ERROR_LED_PIN 12 // (Arduino is 13, Teensy is 11, Teensy++ is 6)
-bool blinkState = false;
+bool blinkState = false, start = false;
 unsigned long loop_timer, loop_timer_stop, loop_count = 0, elapsed, mpuLoopCount = 0;
 unsigned long mpuFifoTimerStart, mpuFifoTimerStart2, mpuFifoTimerStop;
 unsigned long pidTimerStart, pidTimerStop;
@@ -174,6 +174,7 @@ float euler[3];         // [psi, theta, phi]    Euler angle container
 float ypr[3];           // [yaw, pitch, roll]   yaw/pitch/roll container and gravity vector
 float yprdeg[3];        // [yaw, pitch, roll]   yaw/pitch/roll container and gravity vector, in degrees
 float yprset[3];        // [yaw, pitch, roll]   yaw/pitch/roll setting from remote control
+float yin, pin, rin;
 
 // packet structure for InvenSense teapot demo
 uint8_t teapotPacket[14] = { '$', 0x02, 0, 0, 0, 0, 0, 0, 0, 0, 0x00, 0x00, '\r', '\n' };
@@ -203,9 +204,9 @@ int rc_center[4];
 #define PITCH_CH 2 
 #define PITCH_PIN 9
 #define PITCH_ID 1
-#define PITCH_CH 1 
-#define PITCH_PIN 8 
-#define PITCH_ID 0 
+#define ROLL_CH 1 
+#define ROLL_PIN 8 
+#define ROLL_ID 0 
 
 #define RC_CH1_MIN 994
 #define RC_CH1_MAX 1974
@@ -220,9 +221,15 @@ int rc_center[4];
 #define RC_CH4_MAX 1967
 #define RC_CH4_CENTER 1487
 
+//    dp = pin-pLast;
+//    dr = rin-rLast;
+//    p = yprset[1] - pin;
+//    r = yprset[2] - rin;
+//    Cr = K1r * r + K2r * dr;
+//    Cp = K1p * p + K2p * dp;
 float Cr=0, Cp=0;
-float K1r=1, K1p=1,K2r=1, K2p=1, K3r=1, K3p=1;
-float rLast=0, pLast=0;
+float K1r = 100, K1p = 0,K2r = -7000, K2p = 0, K3r = 0, K3p = 0;
+float yLast = 0, rLast=0, pLast=0;
 
 // ================================================================
 // ===               FLIGHT CONTROL ROUTINES                    ===
@@ -309,7 +316,7 @@ bool readFIFO()
   if (mpuLoopCount > 12) {
     // We still cannot read the FIFO after the I2C reset, so we give up on the automatic leveling
     // and we switch to unassisted flight mode, for which the IMU readings are not needed
-    flightMode = UNASSISTED;
+    //flightMode = UNASSISTED;
     return false;
   }
   
@@ -360,108 +367,17 @@ bool readFIFO()
 
 void printAngles()
 {
-    //Serial.print("FIFO count\t");
-    //Serial.println(fifoCount);
-    //elapsed = micros() - loop_timer;
-#ifdef OUTPUT_READABLE_QUATERNION
-    // display quaternion values in easy matrix form: w x y z
-    mpu.dmpGetQuaternion(&q, fifoBuffer);
-    Serial.print("quat\t");
-    Serial.print(q.w);
-    Serial.print("\t");
-    Serial.print(q.x);
-    Serial.print("\t");
-    Serial.print(q.y);
-    Serial.print("\t");
-    Serial.print(q.z);
-#endif
-
-#ifdef OUTPUT_READABLE_EULER
-    // display Euler angles in degrees
-    mpu.dmpGetQuaternion(&q, fifoBuffer);
-    mpu.dmpGetEuler(euler, &q);
-    Serial.print("euler\t");
-    Serial.print(euler[0] * 180 / M_PI);
-    Serial.print("\t");
-    Serial.print(euler[1] * 180 / M_PI);
-    Serial.print("\t");
-    Serial.print(euler[2] * 180 / M_PI);
-#endif
-
-#ifdef OUTPUT_READABLE_YAWPITCHROLL
-    // display Euler angles in degrees
-    mpu.dmpGetQuaternion(&q, fifoBuffer);
-    mpu.dmpGetGravity(&gravity, &q);
-    mpu.dmpGetYawPitchRoll(ypr, &q, &gravity);
     Serial.print("ypr\t");
-    Serial.print(ypr[0] * 180 / M_PI);
+    Serial.print(yin * 180 / M_PI);
     Serial.print("\t");
-    Serial.print(ypr[1] * 180 / M_PI);
+    Serial.print(pin * 180 / M_PI);
     Serial.print("\t");
-    Serial.print(ypr[2] * 180 / M_PI);
-    /*
-      mpu.dmpGetAccel(&aa, fifoBuffer);
-      Serial.print("\tRaw Accl XYZ\t");
-      Serial.print(aa.x);
-      Serial.print("\t");
-      Serial.print(aa.y);
-      Serial.print("\t");
-      Serial.print(aa.z);
-      mpu.dmpGetGyro(&gy, fifoBuffer);
-      Serial.print("\tRaw Gyro XYZ\t");
-      Serial.print(gy.x);
-      Serial.print("\t");
-      Serial.print(gy.y);
-      Serial.print("\t");
-      Serial.print(gy.z);
-    */
-    //Serial.println();
+    Serial.print(rin * 180 / M_PI);
 
-#endif
-
-#ifdef OUTPUT_READABLE_REALACCEL
-    // display real acceleration, adjusted to remove gravity
-    mpu.dmpGetQuaternion(&q, fifoBuffer);
-    mpu.dmpGetAccel(&aa, fifoBuffer);
-    mpu.dmpGetGravity(&gravity, &q);
-    mpu.dmpGetLinearAccel(&aaReal, &aa, &gravity);
-    Serial.print("areal\t");
-    Serial.print(aaReal.x);
     Serial.print("\t");
-    Serial.print(aaReal.y);
+    Serial.print(Cp);
     Serial.print("\t");
-    Serial.print(aaReal.z);
-#endif
-
-#ifdef OUTPUT_READABLE_WORLDACCEL
-    // display initial world-frame acceleration, adjusted to remove gravity
-    // and rotated based on known orientation from quaternion
-    mpu.dmpGetQuaternion(&q, fifoBuffer);
-    mpu.dmpGetAccel(&aa, fifoBuffer);
-    mpu.dmpGetGravity(&gravity, &q);
-    mpu.dmpGetLinearAccel(&aaReal, &aa, &gravity);
-    mpu.dmpGetLinearAccelInWorld(&aaWorld, &aaReal, &q);
-    Serial.print("aworld\t");
-    Serial.print(aaWorld.x);
-    Serial.print("\t");
-    Serial.print(aaWorld.y);
-    Serial.print("\t");
-    Serial.print(aaWorld.z);
-#endif
-
-#ifdef OUTPUT_TEAPOT
-    // display quaternion values in InvenSense Teapot demo format:
-    teapotPacket[2] = fifoBuffer[0];
-    teapotPacket[3] = fifoBuffer[1];
-    teapotPacket[4] = fifoBuffer[4];
-    teapotPacket[5] = fifoBuffer[5];
-    teapotPacket[6] = fifoBuffer[8];
-    teapotPacket[7] = fifoBuffer[9];
-    teapotPacket[8] = fifoBuffer[12];
-    teapotPacket[9] = fifoBuffer[13];
-    Serial.write(teapotPacket, 14);
-    teapotPacket[11]++; // packetCount, loops at 0xFF on purpose
-#endif
+    Serial.print(Cr);
 
 #ifdef BENCHMARK
     Serial.print("\tFIFO took ");
@@ -490,6 +406,24 @@ void heartBeat()
     //Serial.print("\t");
     //Serial.println(fifoCount);
     printAngles();
+
+    Serial.print("RC\t");
+    Serial.print(yprset[0]);
+    Serial.print("\t");
+    Serial.print(yprset[1]);
+    Serial.print("\t");
+    Serial.print(yprset[2]);
+    Serial.print("\t");
+    Serial.println(yprset[3]);
+
+    Serial.print("ESC\t");
+    Serial.print(esc_1);
+    Serial.print("\t");
+    Serial.print(esc_2);
+    Serial.print("\t");
+    Serial.print(esc_3);
+    Serial.print("\t");
+    Serial.println(esc_4);
 #endif
     // blink LED to indicate activity
     blinkState = !blinkState;
@@ -512,8 +446,14 @@ void computeYPR()
   mpu.dmpGetQuaternion(&q, fifoBuffer);
   mpu.dmpGetGravity(&gravity, &q);
   mpu.dmpGetYawPitchRoll(ypr, &q, &gravity);
+  yLast = yin;
+  pLast = pin;
+  rLast = rin;
+  yin = ypr[0];
+  pin = ypr[2];
+  rin = ypr[1];
   //yprdeg[0] = ypr[0] * 180 / M_PI;
-  //yprdeg[1] = ypr[1] * 180 // M_PI;
+  //yprdeg[1] = ypr[1] * 180 / M_PI;
   //yprdeg[2] = ypr[2] * 180 / M_PI;
 }
 
@@ -525,24 +465,21 @@ int normalize_receiver_channel(byte channel){
   int low, center, high, actual;
   int difference;
 
-  channel = eeprom_data[function + 23] & 0b00000111;                           //What channel corresponds with the specific function
-  if (eeprom_data[function + 23] & 0b10000000) reverse = 1;                    //Reverse channel when most significant bit is set
-  else reverse = 0;                                                            //If the most significant is not set there is no reverse
 
   actual = receiver_input[channel];                                            //Read the actual receiver value for the corresponding function
-  low = (eeprom_data[channel * 2 + 15] << 8) | eeprom_data[channel * 2 + 14];  //Store the low value for the specific receiver input channel
-  center = (eeprom_data[channel * 2 - 1] << 8) | eeprom_data[channel * 2 - 2]; //Store the center value for the specific receiver input channel
-  high = (eeprom_data[channel * 2 + 7] << 8) | eeprom_data[channel * 2 + 6];   //Store the high value for the specific receiver input channel
+  low = rc_min[channel];  //Store the low value for the specific receiver input channel
+  center = rc_center[channel]; //Store the center value for the specific receiver input channel
+  high = rc_max[channel];   //Store the high value for the specific receiver input channel
 
   if(actual < center) {                                                        //The actual receiver value is lower than the center value
     if(actual < low) actual = low;                                             //Limit the lowest value to the value that was detected during setup
     difference = ((long)(center - actual) * (long)500) / (center - low);       //Calculate and scale the actual value to a 1000 - 2000us value
-    else return 1500 - difference;                                             //If the channel is not reversed
+    return 1500 - difference;                                             //If the channel is not reversed
   }
   else if(actual > center) {                                                   //The actual receiver value is higher than the center value
     if(actual > high) actual = high;                                           //Limit the lowest value to the value that was detected during setup
     difference = ((long)(actual - center) * (long)500) / (high - center);      //Calculate and scale the actual value to a 1000 - 2000us value
-    else return 1500 + difference;                                             //If the channel is not reversed
+    return 1500 + difference;                                             //If the channel is not reversed
   }
   else return 1500;
 }
@@ -550,26 +487,69 @@ int normalize_receiver_channel(byte channel){
 
 void computeMotorSpeeds()
 {
-float dr, dp, r, p;
+float dr, dp, r, p, temp;
 #ifdef BENCHMARK
   pidTimerStart = micros();
 #endif
+  throttle = normalize_receiver_channel(THROTTLE_ID);
+  if (throttle > 1500) throttle = 1500;
+  if (throttle < 1100) throttle = 1100;
+  yprset[0] = 0; //normalize_receiver_channel(YAW_ID);
+  yprset[1] = 0; //normalize_receiver_channel(PITCH_ID);
+  temp = normalize_receiver_channel(ROLL_ID);
+  yprset[2] = (temp * M_PI) / 2000 - M_PI * 3 / 4 ;
+  
+  
 
+  
+  
   if (flightMode == AUTO_LEVELING) {
-    dp = ypr[1]-pLast;
-    dr = ypr[2]-rLast;
-    p = yprset[1]-ypr[1];
-    r = yprset[2]-ypr[2];
-    Cr=K1r*r+K2r*dr;
-    Cp=K1p*p+K2p*dp;
-
+    dy = yin-yLast;
+    dp = pin-pLast;
+    dr = rin-rLast;
+    p = yprset[1] - pin;
+    r = yprset[2] - rin;
+    Cr = K1r * r + K2r * dr;
+    Cp = K1p * p + K2p * dp;
+    Cy = Ky * (dy - dset);
+    /*Serial.print("p: ");
+    Serial.print(pin);
+    Serial.print(",");
+    Serial.print(p);
+    Serial.print(",");
+    Serial.print(dp);
+    Serial.print(",");
+    Serial.println(Cp);*/
     
-    escFL = throttle - Cp + Cr;
-    escFR = throttle - Cp - Cr;
-    escBL = throttle + Cp + Cr;
-    escBR = throttle + Cp - Cr;
+    escFL = throttle - Cp + Cr + CY;
+    escFR = throttle - Cp - Cr - Cy;
+    escBL = throttle + Cp + Cr - Cy;
+    escBR = throttle + Cp - Cr + Cy;
+
+    esc_1 = escFL;
+    esc_2 = escFR;
+    esc_3 = escBR;
+    esc_4 = escBL;
+    
     } else {
     
+  }
+
+  if (esc_1 < 1000) esc_1 = 1000;
+  if (esc_2 < 1000) esc_2 = 1000;
+  if (esc_3 < 1000) esc_3 = 1000;
+  if (esc_4 < 1000) esc_4 = 1000;
+
+  if (esc_1 > 2000) esc_1 = 2000;
+  if (esc_2 > 2000) esc_2 = 2000;
+  if (esc_3 > 2000) esc_3 = 2000;
+  if (esc_4 > 2000) esc_4 = 2000;
+
+  if (start == false) {
+    esc_1 = 1000;
+    esc_2 = 1000;
+    esc_3 = 1000;
+    esc_4 = 1000;
   }
 
 #ifdef BENCHMARK
@@ -712,6 +692,10 @@ void setup() {
     Serial.println(F(")"));
   }
 
+  
+  DDRD = DDRD | B11110000;
+
+
   // configure interrupt pins  
   PCICR |= (1 << PCIE0);                                                    //Set PCIE0 to enable PCMSK0 scan.
   PCMSK0 |= (1 << PCINT0);                                                  //Set PCINT0 (digital input 8) to trigger an interrupt on state change.
@@ -720,10 +704,18 @@ void setup() {
   PCMSK0 |= (1 << PCINT3);                                                  //Set PCINT3 (digital input 11)to trigger an interrupt on state change.
   //PCMSK0 |= (1 << PCINT4);                                                  //Set PCINT4 (digital input 12)to trigger an interrupt on state change.
 
-int rc_min[4];
-int rc_max[4];
-int rc_center[4];
   rc_min[0] = RC_CH1_MIN;
+  rc_max[0] = RC_CH1_MAX;
+  rc_center[0] = RC_CH1_CENTER;
+  rc_min[1] = RC_CH2_MIN;
+  rc_max[1] = RC_CH2_MAX;
+  rc_center[1] = RC_CH2_CENTER;
+  rc_min[2] = RC_CH3_MIN;
+  rc_max[2] = RC_CH3_MAX;
+  rc_center[2] = RC_CH3_CENTER;  
+  rc_min[3] = RC_CH4_MIN;
+  rc_max[3] = RC_CH4_MAX;
+  rc_center[3] = RC_CH4_CENTER;
   loop_count = 0;
 
   mpu.resetFIFO();
@@ -742,6 +734,8 @@ int rc_center[4];
   yprdeg[2] = 0;
 
   flightMode = AUTO_LEVELING;
+
+  start = false;
 
   digitalWrite(STATUS_LED_PIN, LOW);
   digitalWrite(ERROR_LED_PIN, LOW);
@@ -766,7 +760,7 @@ ISR(PCINT0_vect){
   }
   else if(last_channel_1 == 1){                                             //Input 8 is not high and changed from 1 to 0.
     last_channel_1 = 0;                                                     //Remember current input state.
-    receiver_input[1] = current_time - timer_1;                             //Channel 1 is current_time - timer_1.
+    receiver_input[0] = current_time - timer_1;                             //Channel 1 is current_time - timer_1.
   }
   //Channel 2=========================================
   if(PINB & B00000010 ){                                                    //Is input 9 high?
@@ -777,7 +771,7 @@ ISR(PCINT0_vect){
   }
   else if(last_channel_2 == 1){                                             //Input 9 is not high and changed from 1 to 0.
     last_channel_2 = 0;                                                     //Remember current input state.
-    receiver_input[2] = current_time - timer_2;                             //Channel 2 is current_time - timer_2.
+    receiver_input[1] = current_time - timer_2;                             //Channel 2 is current_time - timer_2.
   }
   //Channel 3=========================================
   if(PINB & B00000100 ){                                                    //Is input 10 high?
@@ -788,7 +782,7 @@ ISR(PCINT0_vect){
   }
   else if(last_channel_3 == 1){                                             //Input 10 is not high and changed from 1 to 0.
     last_channel_3 = 0;                                                     //Remember current input state.
-    receiver_input[3] = current_time - timer_3;                             //Channel 3 is current_time - timer_3.
+    receiver_input[2] = current_time - timer_3;                             //Channel 3 is current_time - timer_3.
 
   }
   //Channel 4=========================================
@@ -800,7 +794,7 @@ ISR(PCINT0_vect){
   }
   else if(last_channel_4 == 1){                                             //Input 11 is not high and changed from 1 to 0.
     last_channel_4 = 0;                                                     //Remember current input state.
-    receiver_input[4] = current_time - timer_4;                             //Channel 4 is current_time - timer_4.
+    receiver_input[3] = current_time - timer_4;                             //Channel 4 is current_time - timer_4.
   }
 }
 
@@ -810,8 +804,26 @@ ISR(PCINT0_vect){
 // ================================================================
 
 void loop() {
+  byte data;
+
   // if programming failed, don't try to do anything
   if (!dmpReady) return;
+
+  if(Serial.available() > 0) {
+    data = Serial.read();                                       //Read the incomming byte.
+    delayMicroseconds(1000);                                    //Wait for any other bytes to come in
+    while(Serial.available() > 0) Serial.read(); //Empty the Serial buffer.
+
+    if(data == '0') {
+      start = false;
+      Serial.println("start!");
+    }
+
+    if(data == '1') {
+      start = true;
+      Serial.println("start!");
+    }
+  }
 
   if (readFIFO()) {
     heartBeat();
