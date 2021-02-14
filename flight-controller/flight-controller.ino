@@ -46,7 +46,7 @@
 */
 
 //#define DEBUG
-#define BENCHMARK
+//#define BENCHMARK
 
 // I2Cdev and MPU6050 must be installed as libraries, or else the .cpp/.h files
 // for both classes must be in the include path of your project
@@ -194,6 +194,7 @@ int receiver_input[5];
 int rc_min[4];
 int rc_max[4];
 int rc_center[4];
+int rc_in[4];
 
 #define THROTTLE_CH 3
 #define THROTTLE_PIN 10
@@ -227,8 +228,10 @@ int rc_center[4];
 //    r = yprset[2] - rin;
 //    Cr = K1r * r + K2r * dr;
 //    Cp = K1p * p + K2p * dp;
-float Cr=0, Cp=0;
-float K1r = 100, K1p = 0,K2r = -7000, K2p = 0, K3r = 0, K3p = 0;
+float Cr = 0, Cp = 0, Cy = 0;
+float K1r = 100, K2r = -7000, K3r = 0, 
+      K1p = 100, K2p = -7000, K3p = 0, 
+      Ky = 1000;
 float yLast = 0, rLast=0, pLast=0;
 
 // ================================================================
@@ -406,6 +409,7 @@ void heartBeat()
     //Serial.print("\t");
     //Serial.println(fifoCount);
     printAngles();
+    Serial.println("");
 
     Serial.print("RC\t");
     Serial.print(yprset[0]);
@@ -424,6 +428,14 @@ void heartBeat()
     Serial.print(esc_3);
     Serial.print("\t");
     Serial.println(esc_4);
+
+    Serial.print("PID\t");
+    Serial.print(Cy);
+    Serial.print("\t");
+    Serial.print(Cp);
+    Serial.print("\t");
+    Serial.println(Cr);
+
 #endif
     // blink LED to indicate activity
     blinkState = !blinkState;
@@ -487,16 +499,20 @@ int normalize_receiver_channel(byte channel){
 
 void computeMotorSpeeds()
 {
-float dr, dp, r, p, temp;
+float dr, dp, r, p, temp, dy;
 #ifdef BENCHMARK
   pidTimerStart = micros();
 #endif
-  throttle = normalize_receiver_channel(THROTTLE_ID);
+  throttle = rc_in[0];
   if (throttle > 1500) throttle = 1500;
-  if (throttle < 1100) throttle = 1100;
-  yprset[0] = 0; //normalize_receiver_channel(YAW_ID);
+  //if (throttle < 1100) throttle = 1100;
+  
+  temp = rc_in[1] - 1500; // -500 -> 500
+  yprset[0] = temp / 5000; // -0.1 -> 1
+  
   yprset[1] = 0; //normalize_receiver_channel(PITCH_ID);
-  temp = normalize_receiver_channel(ROLL_ID);
+  
+  temp = rc_in[3];
   yprset[2] = (temp * M_PI) / 2000 - M_PI * 3 / 4 ;
   
   
@@ -505,13 +521,17 @@ float dr, dp, r, p, temp;
   
   if (flightMode == AUTO_LEVELING) {
     dy = yin-yLast;
-    dp = pin-pLast;
-    dr = rin-rLast;
+    Cy = 0; //Ky * (dy - yprset[0]);
+
     p = yprset[1] - pin;
+    dp = pin-pLast;
+    Cp = 0; //K1p * p + K2p * dp;
+
     r = yprset[2] - rin;
+    dr = rin-rLast;
     Cr = K1r * r + K2r * dr;
-    Cp = K1p * p + K2p * dp;
-    Cy = Ky * (dy - dset);
+
+    
     /*Serial.print("p: ");
     Serial.print(pin);
     Serial.print(",");
@@ -521,7 +541,7 @@ float dr, dp, r, p, temp;
     Serial.print(",");
     Serial.println(Cp);*/
     
-    escFL = throttle - Cp + Cr + CY;
+    escFL = throttle - Cp + Cr + Cy;
     escFR = throttle - Cp - Cr - Cy;
     escBL = throttle + Cp + Cr - Cy;
     escBR = throttle + Cp - Cr + Cy;
@@ -735,7 +755,7 @@ void setup() {
 
   flightMode = AUTO_LEVELING;
 
-  start = false;
+  start = 0;
 
   digitalWrite(STATUS_LED_PIN, LOW);
   digitalWrite(ERROR_LED_PIN, LOW);
@@ -809,21 +829,19 @@ void loop() {
   // if programming failed, don't try to do anything
   if (!dmpReady) return;
 
-  if(Serial.available() > 0) {
-    data = Serial.read();                                       //Read the incomming byte.
-    delayMicroseconds(1000);                                    //Wait for any other bytes to come in
-    while(Serial.available() > 0) Serial.read(); //Empty the Serial buffer.
+  rc_in[0] = normalize_receiver_channel(THROTTLE_ID);
+  rc_in[1] = normalize_receiver_channel(YAW_ID);
+  rc_in[2] = normalize_receiver_channel(PITCH_ID);
+  rc_in[3] = normalize_receiver_channel(ROLL_ID);
 
-    if(data == '0') {
-      start = false;
-      Serial.println("start!");
-    }
-
-    if(data == '1') {
-      start = true;
-      Serial.println("start!");
-    }
+  if (rc_in[0] < 1050 && rc_in[1] < 1050) {
+    start = 1;
   }
+
+  if (rc_in[0] < 1050 && rc_in[1] > 1950) {
+    start = 0;
+  }
+
 
   if (readFIFO()) {
     heartBeat();
